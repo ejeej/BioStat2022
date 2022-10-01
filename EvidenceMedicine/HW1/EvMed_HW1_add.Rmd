@@ -1,0 +1,116 @@
+---
+title: "Доказательная медицина, ДЗ №1"
+author: "Мироненко Ольга"
+output:
+  pdf_document:
+    latex_engine: xelatex
+header-includes:
+- \usepackage{polyglossia}
+- \setdefaultlanguage{russian}
+- \newfontfamily{\cyrillicfont}{Times New Roman} 
+- \newfontfamily{\cyrillicfontrm}{Times New Roman}
+- \newfontfamily{\cyrillicfonttt}{Courier New}
+- \newfontfamily{\cyrillicfontsf}{Arial}
+fontsize: 12pt
+geometry: margin=2cm
+papersize: a4
+urlcolor: blue
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(labelled)
+library(gtsummary)
+library(gt)
+
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, error = FALSE)
+options(scipen = 999, encoding = "UTF-8")
+```
+
+## **Задание 2, дополнение**
+
+<br>
+
+Таблица сопряженности:
+
+```{r}
+df <- read.csv("otravlenie.csv", encoding = "UTF-8")
+names(df) <- c("id", "meat", "fish", "salad", "otr")
+
+df <- df %>%
+  mutate_at(vars(meat:salad), ~ factor(., 1:0, c("Да", "Нет"))) %>%
+  mutate(otr = factor(otr, 1:0, c("Отравление", "Нет отравления")))
+
+var_label(df) <- list(meat = "Мясо", fish = "Рыба", salad = "Салат")
+
+or_fun <- function(data, variable, by, ...) {
+  round(table(data[[variable]], data[[by]]) %>%
+          fisher.test() %>%
+          broom::tidy() %>%
+          pull(estimate),1)
+}
+
+tbl_summary(df %>% select(-id), by = "otr",
+            statistic = all_categorical() ~ "{n}") %>%
+  modify_header(all_stat_cols() ~ "**{level} (N = {n})**",
+                label = "") %>%
+  add_difference(test = everything() ~ or_fun) %>%
+  modify_header(p.value ~ "**OR**") %>%
+  # add_overall(last = TRUE, col_label = "**Всего**<br>N = {N}") %>%
+  modify_footnote(everything() ~ NA) %>%
+  bold_labels()
+
+df <- df %>%
+  rowwise() %>%
+  mutate(menu = pmap_chr(list(meat, fish, salad), 
+                         function(x,y,z) {
+                           dishes <- as.numeric(c(x,y,z))
+                           dishes <- c("M", "F", "S")[dishes == 1]
+                           paste(dishes, collapse = " + ")
+                         })) %>% 
+  ungroup() %>%
+  mutate(menu = fct_infreq(ifelse(menu == "", "N", menu)),
+         menu2 = factor(ifelse(meat == "Да" | salad == "Да", 1, 0), 1:0, c("M or S", "No M and no S")))
+```
+
+Получается, что шанс отравиться был заметно выше для тех, кто ел мясо ($OR > 1$), по сравнению с теми, кто его не ел. Евшие салат и не евшие салат имели близкий шанс отравиться ($OR$ относительно близко к 1). А употребление рыбы как будто бы и вовсе уберегало от отравления :) ($OR$ близко к 0).
+
+Что касается "защитных свойств рыбы", то первой мыслью при выполнении задания было, что те, кто ел рыбу, видимо, реже ели мясо, и это их уберегло )) Но я посмотрела на долю евших и не евших мясо среди евших рыбу - там практически поровну, что несильно отличается от картины среди евших салат и среди всех опрошенных (и там, и там чуть больше половины ели мясо). Иными словами, были сомнения, что выбор мяса был как-то связан с выбором рыбы или салата. И дальше я эту мысль раскручивать не стала. Теперь попробую.
+
+Можно отметить следующее:
+
+- Если бы мы имели дело с результатами когортного исследования, то я бы предположила, что такой результат может объясняться, в частности, тем, что рыбу ели реже мяса и салата (т.е. prevalence рыбы был маленький), но тут мы оцениваем отношения шансов, которые от prevalence не зависят, и оценить отношение рисков не можем.
+
+- Вообще говоря, мы не можем сравнивать подсчитанные выше отношения шансов между проверяемыми тремя блюдами, поскольку многие посетители столовой съели за обедом несколько блюд одновременно. В такой ситуации, если виновным оказалось какое-то одно блюдо, но оно часто приобреталось в паре с каким-либо другим, то мы увидим высокие шансы отравления для них обоих, несмотря на "невиновность" второго. Напротив, если блюдо редко покупалось в паре с непригодным, то шансы отравиться таким блюдом будут низкими и соответствующее отношение шансов будет близко к 0, хотя, конечно, это вовсе не будет свидетельствовать о его способности защитить от отравления :)
+
+\newpage
+
+- В подобной ситуации мы можем для каждого опрошенного определить, каким было его меню на том обеде - это уже будут альтернативные друг другу варианты "воздействия", объекты которых не будут пересекаться. Ниже приведу таблицу сопряженности для этого меню и полученные шансы отравления (M - мясо, F - рыба, S - салат, N - ни того, ни другого, не третьего), отсортировав варианты меню по убыванию этих шансов:
+
+```{r}
+tbl <- table(df$menu, df$otr)
+tbl <- data.frame(menu = rownames(tbl), otr = tbl[,1], nootr = tbl[,2], row.names = NULL)
+tbl <- tbl %>% mutate(odds = round(otr/nootr,2)) %>% arrange(-odds)
+names(tbl) <- c("Меню", "Отравление", "Нет отравления", "Шанс отравления")
+gt(tbl) %>%
+  tab_style(locations = cells_column_labels(columns = everything()),
+    style = list(cell_text(weight = "bold"))) %>%
+  cols_align(align = "center", columns = c("Отравление", "Нет отравления", "Шанс отравления"))
+```
+
+Получается, что нулевые шансы отравиться были только у тех, кто ел только рыбу, мясо с рыбой или не ел ни одно из трёх проверяемых блюд. Иными словами, все отравившиеся ели либо мясо, либо салат, либо и то, и другое - и либо дополняли их рыбой, либо нет, но рыба, по всей видимости, точно была невиновна в их отравлении. К подозрительному мясу добавляется подозрительный салат :) Можно даже сгруппировать все меню в 2 варианта:
+
+```{r}
+tbl <- table(df$menu2, df$otr)
+tbl <- data.frame(menu2 = rownames(tbl), otr = tbl[,1], nootr = tbl[,2], row.names = NULL)
+tbl <- tbl %>% mutate(odds = round(otr/nootr, 2)) %>% arrange(-odds)
+names(tbl) <- c("Меню", "Отравление", "Нет отравления", "Шанс отравления")
+gt(tbl) %>%
+  tab_style(locations = cells_column_labels(columns = everything()),
+    style = list(cell_text(weight = "bold"))) %>%
+  cols_align(align = "center", columns = c("Отравление", "Нет отравления", "Шанс отравления"))
+```
+
+Соответственно, отношение шансов отравления при употреблении мяса или салата к шансам отравления при отказе от того и другого стремится к бесконечности. А рыба, видимо, была годная, хотя и не волшебная и, возможно, не пользовавшаяся особым спросом :) Что касается 5 человек, которым в обеде, состоявшем из мяса и рыбы, удалось избежать отравления, то это, на мой взгляд, вполне укладывается в общую картину того, что отравились всё-таки не все, кто ел в тот день мясо или салат.
