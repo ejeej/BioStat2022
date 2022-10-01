@@ -36,7 +36,7 @@ options(scipen = 999, encoding = "UTF-8")
 Таблица сопряженности:
 
 ```{r, results='asis'}
-df <- read.csv("HW1/hypertension.csv", encoding = "UTF-8")
+df <- read.csv("hypertension.csv", encoding = "UTF-8")
 names(df) <- c("id", "male", "hyp")
 
 df <- df %>%
@@ -76,7 +76,7 @@ tbl_summary(df %>% select(-id), by = "hyp",
 Таблица сопряженности:
 
 ```{r}
-df <- read.csv("HW1/otravlenie.csv", encoding = "UTF-8")
+df <- read.csv("otravlenie.csv", encoding = "UTF-8")
 names(df) <- c("id", "meat", "fish", "salad", "otr")
 
 df <- df %>%
@@ -154,7 +154,7 @@ knitr::kable(tbl, col.names = c("Меню", "Отравление", "Нет от
 <br>
 
 ```{r, message=FALSE}
-df <- read.csv("HW1/carrental.csv", encoding = "UTF-8")
+df <- read.csv("carrental.csv", encoding = "UTF-8")
 names(df) <- c("id", "exp", "start", "stop", "acc")
 
 df <- df %>%
