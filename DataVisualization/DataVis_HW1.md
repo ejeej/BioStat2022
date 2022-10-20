@@ -5,7 +5,6 @@ output:
   html_document:
     code_folding: hide
     toc: yes
-    toc_depth: 3
     toc_float: true
     theme: flatly
     keep_md: true
