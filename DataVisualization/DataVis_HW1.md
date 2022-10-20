@@ -23,7 +23,6 @@ library(lemon)
 library(colorspace)
 
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
-# options(scipen = 999, encoding = "UTF-8")
 
 # Основные параметры темы для графиков
 theme_params <- function(...) {
