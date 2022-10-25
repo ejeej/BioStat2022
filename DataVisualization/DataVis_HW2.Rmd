@@ -5,7 +5,6 @@ output:
   html_document:
     code_folding: hide
     toc: yes
-    toc_depth: 3
     toc_float: true
     theme: flatly
     keep_md: true
@@ -57,20 +56,31 @@ ybr <- 10000
 ymin <- floor(min(df$charges)/ybr)*ybr
 ymax <- ceiling(max(df$charges)/ybr)*ybr
 
-plot_ly(data = df %>% 
-          mutate(lbl = sprintf("BMI: %.1f kg/m2<br>Charges: %.1fK",
-                               bmi, charges/1000)),
-        x = ~bmi, y = ~charges, 
-        type = 'scatter', mode = "markers", 
-        color = ~smoker,
-        text = ~lbl, hoverinfo = "text",
-        colors = c("#E15759", "#4E79A7"),
-        marker = list(size = 10), alpha = 0.5) %>%
+pl2 <- plot_ly(data = df %>% 
+                 mutate(lbl = sprintf("BMI: %.1f kg/m2<br>Charges: %.1fK",
+                                      bmi, charges/1000)),
+               x = ~bmi, y = ~charges, 
+               type = 'scatter', mode = "markers", 
+               color = ~smoker,
+               text = ~lbl, hoverinfo = "text",
+               colors = c("#E15759", "#4E79A7"),
+               marker = list(size = 10), alpha = 0.5) %>%
   layout(xaxis = list(title = "BMI, kg/m2",
                       tickvals = seq(xmin, xmax, xbr)),
          yaxis = list(title = "Charges", zeroline = FALSE,
                       range = list(ymin, ymax)),
          title = "<b>Charges vs. BMI, by Smoking status</b>")
+
+htmlwidgets::saveWidget(pl2, "DataVis_HW2_files/pl2.html")
+
+htmltools::tags$iframe(
+  src = file.path(getwd(), "DataVis_HW2_files/pl2.html"),
+  width = "800px",
+  height = "600px",
+  scrolling = "no",
+  seamless = "seamless",
+  frameBorder = "0"
+)
 ```
 
 <br>
@@ -103,7 +113,18 @@ p3 <- ggplot() +
         axis.ticks = element_blank(),
         axis.line = element_blank())
 
-ggplotly(p3, tooltip = "text")
+pl3 <- ggplotly(p3, tooltip = "text")
+
+htmlwidgets::saveWidget(pl3, "DataVis_HW2_files/pl3.html")
+
+htmltools::tags$iframe(
+  src = file.path(getwd(), "DataVis_HW2_files/pl3.html"),
+  width = "800px",
+  height = "600px",
+  scrolling = "no",
+  seamless = "seamless",
+  frameBorder = "0"
+)
 ```
 
 <br>
@@ -154,7 +175,18 @@ p4 <- ggcorrplot(cor_mat, hc.order = TRUE, type = "upper",
                  ggtheme = theme_classic(base_size = 12) +
                    theme(axis.line = element_blank(),
                          axis.ticks = element_blank()))
-ggplotly(p4)
+pl4 <- ggplotly(p4)
+
+htmlwidgets::saveWidget(pl4, "DataVis_HW2_files/pl4.html")
+
+htmltools::tags$iframe(
+  src = file.path(getwd(), "DataVis_HW2_files/pl4.html"),
+  width = "400px",
+  height = "400px",
+  scrolling = "no",
+  seamless = "seamless",
+  frameBorder = "0"
+)
 ```
 
 <br>
