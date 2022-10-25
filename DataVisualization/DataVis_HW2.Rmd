@@ -1,13 +1,7 @@
 ---
 title: "**Визуализация данных, ДЗ №2**"
 author: "Мироненко Ольга"
-output:
-  html_document:
-    code_folding: hide
-    toc: yes
-    toc_float: true
-    theme: flatly
-    keep_md: true
+output: github_document
 editor_options:
   chunk_output_type: console
 ---
