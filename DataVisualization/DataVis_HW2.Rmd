@@ -1,0 +1,827 @@
+---
+title: "**Визуализация данных, ДЗ №2**"
+author: "Мироненко Ольга"
+output:
+  html_document:
+    code_folding: hide
+    toc: yes
+    toc_depth: 3
+    toc_float: true
+    theme: flatly
+    keep_md: true
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, warning = FALSE, message = FALSE}
+library(tidyverse)
+library(plotly)
+library(corrplot)
+library(ggcorrplot)
+library(GGally)
+library(caret)
+library(cluster)
+library(dendextend)
+library(ggalluvial)
+library(pheatmap)
+library(FactoMineR)
+library(factoextra)
+library(lemon)
+library(colorspace)
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
+```
+
+## **Задание 1**
+
+```{r, message=TRUE}
+df <- read_csv("insurance_cost.csv")
+summary(df)
+
+df <- df %>%
+  mutate_at(vars(sex, region), ~ str_to_title(.)) %>%
+  mutate(smoker = factor(smoker, c("yes", "no"), c("Smoker", "Non-smoker")),
+         region = factor(region, c("Northwest", "Northeast", "Southwest", "Southeast")))
+```
+
+<br>
+
+## **Задание 2**
+
+```{r, fig.width=8, fig.height=6}
+xbr <- 5
+xmin <- floor(min(df$bmi)/xbr)*xbr
+xmax <- ceiling(max(df$bmi)/xbr)*xbr
+
+ybr <- 10000
+ymin <- floor(min(df$charges)/ybr)*ybr
+ymax <- ceiling(max(df$charges)/ybr)*ybr
+
+plot_ly(data = df %>% 
+          mutate(lbl = sprintf("BMI: %.1f kg/m2<br>Charges: %.1fK",
+                               bmi, charges/1000)),
+        x = ~bmi, y = ~charges, 
+        type = 'scatter', mode = "markers", 
+        color = ~smoker,
+        text = ~lbl, hoverinfo = "text",
+        colors = c("#E15759", "#4E79A7"),
+        marker = list(size = 10), alpha = 0.5) %>%
+  layout(xaxis = list(title = "BMI, kg/m2",
+                      tickvals = seq(xmin, xmax, xbr)),
+         yaxis = list(title = "Charges", zeroline = FALSE,
+                      range = list(ymin, ymax)),
+         title = "<b>Charges vs. BMI, by Smoking status</b>")
+```
+
+<br>
+
+## **Задание 3**
+
+```{r, fig.width=8, fig.height=6}
+p3 <- ggplot() +
+  geom_point(aes(x = bmi, y = charges, text = lbl, color = smoker), 
+             df %>% 
+               mutate(lbl = sprintf("BMI: %.1f kg/m2<br>Charges: %.1fK",
+                                    bmi, charges/1000)), 
+             size = 2.3, alpha = 0.5) +
+  scale_x_continuous(expand = c(0,0,0.01,0),
+                     breaks = seq(xmin, xmax, xbr),
+                     limits = c(xmin-2, xmax)) +
+  scale_y_continuous(expand = c(0,0),
+                     breaks = seq(ymin, ymax, ybr),
+                     labels = scales::label_number(scale_cut = scales::cut_long_scale()),
+                     limits = c(0, ymax)) +
+  scale_color_manual(values = c("#E15759", "#4E79A7")) +
+  labs(x = "BMI, kg/m2", y = "Charges", 
+       title = "Charges vs. BMI, by Smoking status",
+       color = "", fill = "") +
+  theme_classic(base_size = 12) +
+  theme(panel.grid.major = element_line(color = "grey90", size = 0.4),
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.3, size = 12),
+        axis.title = element_text(size = 11),
+        axis.ticks = element_blank(),
+        axis.line = element_blank())
+
+ggplotly(p3, tooltip = "text")
+```
+
+<br>
+
+## **Задание 4**
+
+**Графики по типу heatmap**:
+
+- С помощью пакета `corrplot`:
+
+```{r, fig.width=4, fig.height=4}
+df_cor <- df %>%
+  select(where(is.numeric)) %>%
+  rename_with(.fn = function(x) str_to_title(x)) %>%
+  rename(BMI = Bmi)
+
+cor_mat <- cor(df_cor)
+
+corrplot(cor_mat, method = "color", type = "lower", 
+         addCoef.col = "grey30", diag = FALSE,
+         cl.pos = "b", tl.col = "grey10",
+         col = COL2('RdBu', 10))
+```
+
+- С помощью пакета `ggcorplot`:
+
+```{r, fig.width=4, fig.height=4}
+ggcorrplot(cor_mat, hc.order = TRUE, type = "upper", 
+           colors = c("#67001F", "#F7F7F7", "#053061"), 
+           outline.col = "white", 
+           lab = TRUE, lab_col = "grey30",
+           tl.srt = 0, tl.cex = 11, tl.col = "grey10",
+           legend.title = "Correlation",
+           ggtheme = theme_classic(base_size = 12) +
+             theme(legend.position = "bottom",
+                   axis.line = element_blank(),
+                   axis.ticks = element_blank()))
+```
+
+- То же самое + `ggplotly`:
+
+```{r, fig.width=4, fig.height=4}
+p4 <- ggcorrplot(cor_mat, hc.order = TRUE, type = "upper", 
+                 colors = c("#67001F", "#F7F7F7", "#053061"), 
+                 outline.col = "white", 
+                 tl.srt = 0, tl.cex = 11, tl.col = "grey10",
+                 legend.title = "Correlation",
+                 ggtheme = theme_classic(base_size = 12) +
+                   theme(axis.line = element_blank(),
+                         axis.ticks = element_blank()))
+ggplotly(p4)
+```
+
+<br>
+
+**Матричные графики**, с помощью которых можно получить информацию как о распределении отдельных количественных переменных, так и о взаимосвязи внутри каждой пары количественных переменных:
+
+- Можно использовать базовую функцию `pairs` - на диагонали покажем гистограммы, в нижней панели - диаграммы рассеяния, в верхней панели - коэффициенты корреляции Пирсона:
+
+```{r, fig.width=6, fig.height=6}
+# From ?pairs: put histograms on the diagonal
+panel.hist <- function(x, ...)
+{
+  usr <- par("usr"); on.exit(par(usr))
+  par(usr = c(usr[1]*0.8, usr[2], -0.1, 1.5))
+  h <- hist(x, plot = FALSE)
+  breaks <- h$breaks; nB <- length(breaks)
+  y <- h$counts; y <- y/max(y)
+  rect(breaks[-nB], 0, breaks[-1], y, col = "#4E79A7", border = "white", ...)
+}
+
+# From ?pairs: put correlations on the upper panels
+panel.cor <- function(x, y, digits = 2, prefix = "", ...)
+{
+  usr <- par("usr"); on.exit(par(usr))
+  par(usr = c(0, 1, 0, 1))
+  r <- abs(cor(x, y))
+  txt <- format(c(r, 0.123456789), digits = digits)[1]
+  txt <- paste0(prefix, txt)
+  text(0.5, 0.5, txt, cex = 1.5)
+}
+
+# Параметры для диаграмм рассеяния
+panel.scat <- function (x, y)  {
+  points(x, y, pch = 18, col = adjustcolor("#4E79A7", 0.5))
+}
+
+pairs(df_cor, lower.panel = panel.scat, 
+      upper.panel = panel.cor, diag.panel = panel.hist)
+```
+
+- С помощью функции `ggpairs` из пакета `GGally`:
+
+```{r, fig.width=6, fig.height=6}
+# Параметры для диаграмм рассеяния
+panel.scat <- function(data, mapping) {
+  ggplot(data = data, mapping = mapping) +
+    geom_point(color = "#4E79A7", size = 1, alpha = 0.5) +
+    scale_y_continuous(label = scales::label_number(scale_cut = scales::cut_long_scale())) +
+    theme_minimal(base_size = 10) +
+    theme(panel.grid.major = element_line(color = "grey90", size = 0.4),
+          panel.grid.minor = element_line(color = "grey90", size = 0.2),
+          axis.ticks = element_line(size = 0.4, colour = "grey50"))
+} 
+
+# Параметры для гистограмм
+panel.hist <- function(data, mapping) {
+  x <<- x + 1
+  bw <- ifelse(x == 1, 4, ifelse(x == 2, 2.5, ifelse(x == 3, 1, 5000)))
+  ggplot(data = data, mapping = mapping) +
+    geom_histogram(fill = "#4E79A7", color = "white", binwidth = bw) +
+    scale_x_continuous(label = scales::label_number(scale_cut = scales::cut_long_scale())) +
+    theme_minimal(base_size = 10) +
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.text.y = element_blank(),
+          axis.ticks = element_line(size = 0.4, colour = "grey50"))
+} 
+
+# Параметры для коэффициентов корреляции
+panel.cor <- function(data, mapping){
+  ggally_cor(data = data, mapping = mapping, 
+             digits = 2, stars = FALSE, title = "Correlation") + 
+    theme_void() +
+    theme(panel.border = element_blank())
+}
+
+x <- 0
+ggpairs(df_cor, switch = "y",
+        diag = list(continuous = panel.hist),
+        upper = list(continuous = panel.cor),
+        lower = list(continuous = panel.scat),
+        progress = FALSE) +
+  theme(strip.background = element_blank(),
+        strip.text = element_text(size = 12, face = "bold"),
+        strip.placement = "outside")
+```
+
+<br>
+
+## **Задание 5**
+
+Перевод бинарных переменных в дамми 0/1, замена категориальных переменных (с более чем двумя категориями) на набор дамми 0/1:
+
+```{r}
+# Для исходной постановки задачи
+df_num <- df %>%
+  mutate(male = as.numeric(sex == "Male"),
+         smoker = as.numeric(smoker == "Smoker")) %>%
+  select(age, male, bmi, children, smoker, region, charges)
+
+dv <- dummyVars(" ~ .", data = df_num)
+df_num <- data.frame(predict(dv, newdata = df_num))
+
+# Для кластеризации с учётом смешанной природы данных
+df_mixed <- df %>%
+  transmute(age, bmi, children, charges, sex = factor(sex), smoker, region) %>%
+  rename_with(.fn = function(x) str_to_title(x)) %>%
+  rename(BMI = Bmi)
+```
+
+Поскольку имеющиеся данные являются смешанными (содержат как количественные, так и категориальные, в том числе бинарные, переменные), это необходимо учитывать при последующей кластеризации, а именно - при выборе методов оценки расстояния между наблюдениями/ кластерами. 
+
+Так, если мы все категориальные переменные заменим на дамми, а потом их нормализуем, то нормализованные значения будут отличаться для разных дамми (в зависимости от среднего и стандартного отклонения по соответствующей дамми-переменной), то есть, условно, два разных признака (например, мужской пол и статус курильщика) могут получить разный "вес" в многомерном пространстве, так же как и Евклидово расстояние или Манхэттеновское расстояние, которые чаще всего используются для истинных количественных переменных, также могут отличаться между наличием и отсутствием двух разных признаков (между мужчинами и женщинами, с одной стороны, и курильщиками и некурильщиками, с другой) - так, будто, например, курильщики отличаются от некурильщиков сильнее, чем мужчины от женщин.
+
+Аналогично, если мы для категориальной переменной с более чем двумя категориями (в нашем случае - для переменной region) создадим дамми в количестве категорий этой переменной, то нормализованные значения получатся разными для этих категорий, если они неравномерно представлены в данных (ноль по одному региону получит одно стандартизованное значение, а ноль по другому - другое). Более того, при этом никак не будет учтена зависимость между этими дамми-переменными: с одной стороны, сильная мультиколлинеарность мешает корректной кластеризации, но с другой, переход к дамми-переменным с их стандартизацией - это точно не решение для проблемы мультиколлинеарности.
+
+Иными словами, для категориальных (в том числе бинарных) признаков корректнее использовать другие подходы к оценке расстояний между наблюдениями/ кластерами, помимо тех, которые используются для истинных количественных переменных. Поэтому дальше, в задачах по кластеризации, я буду приводить то решение, которое вы предполагали получить в задании (с датасетом, сформированным выше, согласно условиями задания 5), а также то, которое, на мой взгляд, является более корректным для смешанных данных. Во втором случае я не буду переводить переменные sex, smoker и region в дамми, а оставлю их в виде факторных переменных, а потом применю к исходному датасету функцию `daisy` из пакета `cluster` с опцией `metric = "gower"`, которая оценивает расстояния Gower'а. Из хелпа для этой функиции: расстояние между наблюдениями _i_ и _j_, при отсутствии пропусков в данных, оценивается как $d_{ij} =	\frac{1}{p}\sum_{k=1}^p d_{ijk}$, где _p_ - количество переменных в датасете (категориальная переменная считается за 1, т.е. не разбивается на дамми для категорий), $d_{ijk}$ - "вклад" _k_-ой переменной в различия между наблюдениями:
+
+- Для категориальных переменных, включая бинарные, принимает значение 0, если значения переменной одинаковые для обоих наблюдений, и 1 - в противном случае.
+
+- Для количественных переменных - это отношение аболютной разницы в значениях переменной между наблюдениями к размаху этой переменной, оцененному по всему датасету.
+
+<br>
+
+## **Задание 6**
+
+Для исходной постановки задачи предварительно стандартизируем данные, а затем создадим матрицу Евклидовых расстояний между наблюдениями, для датасета с факторными переменными - создадим матрицу расстояний Gower'а. После этого проведём иерархическую кластеризацию по каждой из полученных матриц расстояний, при этом в первом случае в качестве основного метода агрегирования наблюдений в кластеры будем использовать метод Ward'а, в качестве дополнительного (для сравнения со вторым подходом) - метод дальнего соседа, во втором - только метод дальнего соседа (метод Ward'а в данном случае неприменим, т.к. он предполагает использование Евклидовых расстояний). По полученным результатам построим дендрограммы - поскольку датасет относительно большой (по числу наблюдений), для начала следаем это с помощью базовой функции `plot`.
+
+```{r, fig.width=8, fig.height=6}
+df_num_scaled <- scale(df_num)
+dist_eucl <- dist(df_num_scaled, method = "euclidean")
+hclust_eucl_ward <- hclust(dist_eucl, method = "ward.D2")
+hclust_eucl_compl <- hclust(dist_eucl, method = "complete")
+
+dist_gower <- daisy(df_mixed, metric = "gower")
+hclust_gower <- hclust(dist_gower, method = "complete")
+
+plot(hclust_eucl_ward, labels = FALSE, hang = 0,
+     main = "Dendrogram, All variables numeric, Ward's method",
+     xlab = element_blank(), sub = element_blank())
+
+plot(hclust_eucl_compl, labels = FALSE, hang = 0,
+     main = "Dendrogram, All variables numeric, Complete linkage",
+     xlab = element_blank(), sub = element_blank())
+
+plot(hclust_gower, labels = FALSE, hang = 0, 
+     main = "Dendrogram, Mixed data, Complete linkage",
+     xlab = element_blank(), sub = element_blank())
+```
+
+Судя по первому графику, оптимальным представляется выделение 5 кластеров, по второму и третьему - 4 кластеров. Используем это для следующего задания.
+
+<br>
+
+## **Задание 7**
+
+Раскрасим кластеры разными цветами - здесь будем использовать функции из пакета `dendextend` (они работают быстрее, чем `fviz_dend` из пакета `factoextra`). 
+
+```{r, fig.width=8, fig.height=6}
+dend_eucl_ward <- as.dendrogram(hclust_eucl_ward)
+dend_eucl_ward %>% 
+  set("labels", NA) %>%
+  set("branches_k_color", k = 5, 
+      value = c("#4E79A7", "#F28E2B", "#59A14F", "#E15759", "#499894")) %>%
+  plot(main = "Dendrogram, All variables numeric, Ward's method",
+       ylim = c(0, 70))
+
+dend_eucl_compl <- as.dendrogram(hclust_eucl_compl)
+dend_eucl_compl %>% 
+  set("labels", NA) %>%
+  set("branches_k_color", k = 4, 
+      value = c("#4E79A7", "#F28E2B", "#59A14F", "#E15759")) %>%
+  plot(main = "Dendrogram, All variables numeric, Complete linkage",
+       ylim = c(0, 10))
+
+dend_gower <- as.dendrogram(hclust_gower)
+dend_gower %>% 
+  set("labels", NA) %>%
+  set("branches_k_color", k = 4, 
+      value = c("#4E79A7", "#F28E2B", "#59A14F", "#E15759")) %>%
+  plot(main = "Dendrogram, Mixed data, Complete linkage",
+       ylim = c(0, 1))
+```
+
+В принципе, сама по себе эта раскраска дендрограммы для такого количества наблюдений не очень информативна - гораздо интереснее понять, во-первых, различаются ли результаты разных вариантов кластеризации, а во-вторых, чем отличаются кластеры внутри каждого метода. Опять же, если бы датасет был поменьше, для сравнения деревьев на предмет того, попадают ли примерно одни и те же наблюдения в одни и те же кластеры, можно было бы воспользоваться функцией `tanglegram` из пакета `dendextend`. В данном же случае я попробую сравнить результаты кластеризации с помощью sankey графиков (нас интересует, прежде всего, два сравнения: для случая трансформации всех переменных в количественные при использовании методов Ward'a против метода дальнего соседа и результатов при трансформации всех переменных в количественные против варианта без трансформации, при использовании метода дальнего соседа).
+
+```{r, fig.width=6, fig.height=5}
+df_clust <- df_mixed
+# Номер наблюдения
+df_clust$id <- 1:nrow(df_clust)
+
+# Номер кластера для каждого наблюдения при каждом подходе
+df_clust$cl_1 <- factor(cutree(hclust_eucl_ward, k = 5))
+df_clust$cl_2 <- factor(cutree(hclust_eucl_compl, k = 4))
+df_clust$cl_3 <- factor(cutree(hclust_gower, k = 4))
+
+plt_df <- pivot_longer(
+  df_clust, cols = cl_1:cl_3, 
+  names_to = "method",
+  names_transform = list(method = function(x) {
+    factor(x, labels = c("Eucl + Ward", "Eucl + CL", "Gower + CL"))
+  }),
+  values_to = "cl",
+  values_transform = list(cl = function(x) factor(x, 1:5))
+)
+
+ggplot(plt_df,
+       aes(x = method, stratum = cl, alluvium = id,
+           y = 1, fill = cl, label = cl)) +
+  geom_flow(color = "white") +
+  geom_stratum(alpha = .5, color = "white") +
+  scale_x_discrete(expand = c(0,0)) +
+  scale_y_continuous(expand = c(0,0), 
+                     breaks = seq(0, 1400, 200), 
+                     sec.axis = dup_axis()) +
+  scale_fill_manual(values = c("#4E79A7", "#F28E2B", "#59A14F", "#E15759", "#499894")) +
+  labs(y = "Number of obs.", x = element_blank(), fill = "Cluster", 
+       title = "Clusters' composition by approach to clustering") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(face = "bold", size = 12),
+        axis.ticks.y = element_line(color = "grey50"),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+```
+
+Видим, что при переводе всех переменных в количественные и использовании метода Ward'а кластеры получаются примерно одинаковыми по численности, а метод дальнего соседа даёт один большой кластер (более 75% наблюдений попадает сюда) и три небольших, примерно одинаковых по размеру, причём практически все, кластеризованные в 3 и 4 кластеры первым методом, попадают в этот большой кластер при втором.
+
+Наконец, использование расстояний Gower'а и метода дальнего соседа даёт два относительно больших кластера (примерно по 40% наблюдений каждый) и два небольших (примерно по 10%), при этом примерно в такой же пропорции наблюдения, классифицированные по Евклидовым расстояниям в кластер 1, распределяются между этими четырьмя кластерами.
+
+Для иллюстрации характеристик наблюдений, попавших в каждый кластер при каждом подходе к классификации, можно привести таблицы с описательными статистиками всех переменных по кластерам, но мы попробуем это сделать с помощью графиков, а именно: построим боксплоты для количественных переменных и кумулятивные столбиковые диаграммы для долей категорий категориальных признаков, разбив их по кластерам:
+
+```{r, fig.width=8, fig.height=7}
+plt_df_num <- df_clust %>%
+  select(where(is.numeric), -id, contains("cl_")) %>%
+  pivot_longer(cols = where(is.numeric), names_to = "var") %>%
+  pivot_longer(
+    cols = where(is.factor), names_to = "method", values_to = "cl",
+    names_transform = list(method = function(x) {
+      factor(x, labels = c("Eucl + Ward", "Eucl + CL", "Gower + CL"))
+    }),
+    values_transform = list(cl = function(x) factor(x, 1:5))
+  )
+
+ggplot() +
+  geom_boxplot(aes(x = cl, y = value, color = cl), plt_df_num, 
+               size = 1, show.legend = FALSE) +
+  facet_rep_grid(var ~ method, scales = "free", switch = "y", repeat.tick.labels = TRUE) +
+  scale_y_continuous(label = scales::label_number(scale_cut = scales::cut_long_scale())) +
+  scale_color_manual(values = c("#4E79A7", "#F28E2B", "#59A14F", "#E15759", "#499894")) +
+  labs(x = "Cluster", y = element_blank(), 
+       title = "Comparing numeric variables bw clusters") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 14),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        axis.ticks.y = element_line(size = 0.4, color = "grey50"),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12, face = "bold"),
+        strip.placement = "outside")
+```
+
+```{r, fig.width=8, fig.height=8}
+plt_df_cat <- df_clust %>%
+  select(where(is.factor)) %>%
+  pivot_longer(cols = -contains("cl_"), names_to = "var", 
+               values_transform = list(value = as.character)) %>%
+  pivot_longer(
+    cols = where(is.factor), names_to = "method", values_to = "cl",
+    names_transform = list(method = function(x) {
+      factor(x, labels = c("Eucl + Ward", "Eucl + CL", "Gower + CL"))
+    }),
+    values_transform = list(cl = function(x) factor(x, 1:5))
+  ) %>%
+  group_by(var, method, cl, value) %>%
+  summarise(n = n()) %>%
+  group_by(var, method, cl) %>%
+  mutate(pct = n/sum(n)) %>%
+  ungroup() %>%
+  mutate(value = sprintf("%s=%s", var, value))
+
+ggplot() +
+  geom_bar(aes(x = cl, y = pct, fill = value), plt_df_cat, 
+           stat = "identity", position = "stack", color = "white") +
+  facet_rep_grid(var ~ method, scales = "free", switch = "y", 
+                 repeat.tick.labels = TRUE) +
+  scale_y_continuous(expand = c(0,0),
+                     label = scales::percent_format(accuracy = 1)) +
+  scale_fill_manual(values = c("#849DB1", "#4F6980", "#D4A6C8", "#B07AA1", 
+                               "#E15759", "#4E79A7",
+                               "#76B7B2", "#F28E2B")) +
+  labs(x = "Cluster", y = element_blank(), fill = element_blank(),
+       title = "Comparing categorical variables bw clusters") +
+  guides(fill = guide_legend(nrow = 4)) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom",
+        plot.title = element_text(face = "bold", hjust = 0.5, size = 14),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.ticks.y = element_line(size = 0.4, color = "grey50"),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 12, face = "bold"),
+        strip.placement = "outside")
+```
+
+По этим результатам можно построить примерную картину "среднестатистичекого" представителя каждого кластера. Помимо этого, заметны явные различия в работе с категориальными признаками при переводе всех переменных в количественные и использовании Евклидовых расстояний и при отказе от этой трансформации и использовании расстояний Gower'а.
+
+Так, в последнем случае во 2 и 3 кластеры попадают только некурящие, в этих же кластерах заметно ниже страховые выплаты (ранее мы видели, что, в среднем, выплаты связаны со статусом курильщика), а отличаются они друг от друга тем, что во 2 кластер попадают только мужчины, а в 3 - только женщины. 1 и 4 кластеры - это некурящие женщины и мужчины, соответственно. По остальным признакам заметных различий между кластерами, т.е. можно предположить, что в данном случае основной вклад на разбивку наблюдений по кластерам оказал размер страховых выплат, статус курильщика и пол.
+
+При использовании трансформации категориальных признаков в дамми-переменные и метода Ward'а можно четко выделить первый кластер, в котором оказываются только курильщики разного пола и из разных регионов, у которых относительно более высокие страховые выплаты, а остальные 4 кластера некурильщиков просто бьются по региону. То есть основное отличие от подхода без трансформации - в разбивке с учетом региона вместо пола. Использование метода дальнего соседа в данном случае даёт более смазанную картину разбивки по кластерам.
+
+<br>
+
+## **Задание 8**
+
+Для каждого подхода к кластеризации совместим на одном графике результаты кластеризации строк и столбцов, heatmap для значений наблюдений по каждой количественной переменной (включая дамми), сопоставив это с разбивкой на кластеры другими двумя методами:
+
+```{r,fig.width=9, fig.height=10}
+# Аннотации для строк
+ann_rows <- df_clust %>% 
+  transmute(`Eucl + Ward` = cl_1, `Eucl + CL` = cl_2, `Gower + CL` = cl_3) %>% 
+  as.data.frame()
+
+# Цвета для ааннотаций
+clrs <- list(
+    # Region = c("#849DB1", "#4F6980", "#D4A6C8", "#B07AA1") %>%
+    #   setNames(levels(df_clust$Region)),
+    # Sex = c("#E15759", "#4E79A7") %>% setNames(levels(df_clust$Sex)),
+    # Smoker = c("#76B7B2", "#F28E2B") %>% setNames(levels(df_clust$Smoker)),
+    `Eucl + CL` = lighten(c("#4E79A7", "#F28E2B", "#59A14F", "#E15759"), 0.3) %>% 
+      setNames(1:4),
+    `Gower + CL` = lighten(c("#4E79A7", "#F28E2B", "#59A14F", "#E15759"), 0.3) %>% 
+      setNames(1:4),
+    `Eucl + Ward` = lighten(c("#4E79A7", "#F28E2B", "#59A14F", "#E15759", "#499894"), 0.3) %>% 
+      setNames(1:5)
+)
+
+clmns <- colnames(df_num_scaled)[c(which(colnames(df_num_scaled) %in% c("age", "bmi", "children", "charges")),
+                                   which(! colnames(df_num_scaled) %in% c("age", "bmi", "children", "charges")))]
+
+pheatmap(df_num_scaled[,clmns], 
+         show_rownames = FALSE, cutree_cols = length(clmns),
+         clustering_distance_rows = dist_eucl,
+         clustering_method = "ward.D2", cutree_rows = 5,
+         annotation_row = ann_rows[,2:3], annotation_colors = clrs,
+         angle_col = 45, labels_col = str_to_title(gsub("region\\.", "", clmns)),
+         main = "Dendrograms for clustering rows (Eucl + Ward)\nand columns with heatmap")
+
+pheatmap(df_num_scaled[,clmns], 
+         show_rownames = FALSE, cutree_cols = length(clmns),
+         clustering_distance_rows = dist_eucl,
+         clustering_method = "complete", cutree_rows = 4,
+         annotation_row = ann_rows[,c(1,3)], annotation_colors = clrs,
+         angle_col = 45, labels_col = str_to_title(gsub("region\\.", "", clmns)),
+         main = "Dendrograms for clustering rows (Eucl + CL)\nand columns with heatmap")
+
+pheatmap(df_num_scaled[,clmns], 
+         show_rownames = FALSE, cutree_cols = length(clmns),
+         clustering_distance_rows = as.dist(as.matrix(dist_gower)),
+         clustering_method = "complete", cutree_rows = 4,
+         annotation_row = ann_rows[,1:2], annotation_colors = clrs,
+         angle_col = 45, labels_col = str_to_title(gsub("region\\.", "", clmns)),
+         main = "Dendrograms for clustering rows (Gower + CL)\nand columns with heatmap")
+```
+
+По этим графикам также можно сопоставить структуру кластеров, их отличия между собой по разным переменным - результаты будут аналогичными приведённым в прошлом задании.
+
+<br>
+
+## **Задание 9**
+
+Классический метод главных компонент (PCA) был разработан для истинных количественных переменных и, аналогично кластерному анализу, основанному на использовании Евклидовых расстояний, плохо работает для категориальных признаков - ровно по тем же причинам, которые были обозначены в Задании 5, только в данном случае применительно к оценке собственных значений (eigenvalues) главных компонент.
+
+Поэтому, опять же, я выполню PCA в двух вариантах: так, как было указано в задании - с трансформацией категориальных признаков в дамми-переменные и стандартизацией всех переменных в датасете, а также с помощью метода FAMD (Factorial Analysis of Mixed Data), предназначенного для смешанных данных. Последний является комбинацией PCA для количественных переменных и MCA (Multiple Correspondence Analysis) для категориальных и при поиске главной компоненты основан на максимизации суммы квадратов корреляции Пирсона для количественных переменных с этой компонентой и квадратов коэффициента корреляции $\eta$ для категориальных признаков с этой компонентой.
+
+```{r, fig.width=4, fig.height=4, fig.show='hold'}
+colnames(df_num_scaled) <- str_to_title(gsub("region\\.", "", colnames(df_num_scaled)))
+colnames(df_num_scaled)[colnames(df_num_scaled) == "Bmi"] <- "BMI"
+
+pca_res <- PCA(df_num_scaled, graph = FALSE)
+famd_res <- FAMD(df_mixed, ncp = 10, graph = FALSE)
+
+ev <- rbind(
+  get_eig(pca_res) %>% 
+    as.data.frame() %>% 
+    set_names("ev", "varpct", "cumvarpct") %>% 
+    rownames_to_column("PC") %>%
+    mutate(method = "PCA"),
+  get_eig(famd_res) %>% 
+    as.data.frame() %>% 
+    set_names("ev", "varpct", "cumvarpct") %>%
+    rownames_to_column("PC") %>%
+    mutate(method = "FAMD")
+) %>%
+  group_by(PC) %>%
+  filter(n() == 2) %>%
+  ungroup() %>%
+  mutate(PC = gsub("Dim\\.", "PC", PC))
+
+ggplot(ev, aes(x = PC, y = ev, color = method, group = method)) +
+  geom_point(size = 3) +
+  geom_line(size = 1) +
+  scale_y_continuous(expand = c(0,0),
+                     limits = c(0, ceiling(max(ev$ev)))) +
+  scale_color_manual(values = c("#4E79A7", "#F28E2B")) +
+  labs(x = element_blank(), y = "Eigenvalue", 
+       color = element_blank(),
+       title = "Scree plots, PCA and FAMD") +
+  theme_classic(base_size = 10) +
+  theme(legend.position = c(0.8,0.9),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        panel.grid.major = element_line(size = 0.4, color = "grey90"),
+        axis.line = element_line(size = 0.5, color = "grey50"))
+
+ggplot(ev, aes(x = PC, y = cumvarpct, color = method, group = method)) +
+  geom_point(size = 3) +
+  geom_line(size = 1) +
+  scale_y_continuous(expand = c(0,0),
+                     limits = c(0, max(ev$cumvarpct)+1),
+                     breaks = seq(0,100,20)) +
+  scale_color_manual(values = c("#4E79A7", "#F28E2B")) +
+  labs(x = element_blank(), y = "Cum. % of variance explained", 
+       color = element_blank(),
+       title = "Cum. % of variance explained, PCA and FAMD") +
+  theme_classic(base_size = 10) +
+  theme(legend.position = c(0.8,0.2),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        panel.grid.major = element_line(size = 0.4, color = "grey90"),
+        axis.line = element_line(size = 0.5, color = "grey50"))
+```
+
+Видим, что оба метода "одинаково плохи" - в том смысле, что не имеют особого смысла, т.к. не позволяют существенным образом сократить пространство признаков по сравнению с тем, которое у нас есть изначально. Так, в обоих случаях по критерию elbow (определяется по scree plot'у) оптимально оставить по 2 главных компоненты, но они объясняют менее 40% исходной вариации данных. В принципе, это было ожидаемо для датасета с большим числом наблюдением и относительно небольшим числом слабо скоррелированных переменных. Поэтому, если бы это был не учебный пример, то я бы не проводила бы PCA/ FAMD для такого датасета изначально или отказалась бы от использования таких двух главных компонент вместо исходных переменных, поскольку в результате потеряется довольно существенный объём информации, да и результаты будет интерпретировать гораздо сложнее.
+
+Для дальнейшей визуализации оставим первые две главные компоненты.
+
+Для начала посмотрим **графики по переменным**, чтобы лучше понять, как мы можем интерпретировать полученные главные компоненты. Для FAMD можно изобразить результаты для количественных и категориальных признаков на одном графике, а можно на разных - в первом случае для всех переменных график строится по координатам, равным квадрату корреляции между переменной и главной компонентой (т.е. cos2) - это мера того, насколько хорошо соответствуюшая главная компонента репрезентирует данную переменную; во втором случае для количественных переменных изображается круговой график для корреляций между переменной и главной компонентой, как при обычном PCA, а для категориальных - график соотношений между категориями категориальных переменных (близкие по профилям главных компонент категории находятся рядом друг с другом, отрицательно коррелирующие категории - в противоположных относительно начала координат квадрантах, расстояние от точки до начала координат отражает качество отражения этой категории главными компонентами). Данные для переменных графиках закрасим в зависимости от вклада переменной в главную компоненту (измеряется от 0 до 100% - фактически это доля cos2 для этой переменной в сумме cos2 для всех переменных с этой компонентой).
+
+```{r, fig.width=4, fig.height=4, fig.show='hold'}
+fviz_pca_var(pca_res, repel = TRUE,
+             col.var = "contrib", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             title = "Variables plot, PCA") + 
+  labs(color = "Contribution", x = "PC1", y = "PC2") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom")
+
+fviz_famd_var(famd_res, repel = TRUE, 
+              col.var = "contrib", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+              title = "Variables plot, FAMD") + 
+  labs(color = "Contribution", x = "PC1", y = "PC2") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom")
+
+fviz_famd_var(famd_res, choice = "quanti.var", repel = TRUE, 
+              col.var = "contrib", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+              title = "Numeric variables plot, FAMD") + 
+  labs(color = "Contribution", x = "PC1", y = "PC2") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom")
+
+fviz_famd_var(famd_res, choice = "quali.var", repel = TRUE, 
+              col.var = "contrib", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+              title = "Categorical variables plot, FAMD") + 
+  labs(color = "Contribution", x = "PC1", y = "PC2") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom")
+```
+
+Таким образом, первая компонента в PCA положительно коррелирует со статусом курильщика и величиной страховых выплат, а вторая - отрицательно коррелирует с юго-восточным регионом и, в меньше степени, с BMI. Остальные переменные плохо репрезентируются первыми двумя главными компонентами. Результаты для FAMD говорят о том, что первая компонента отражает, прежде всего, такие характеристики, как статус курильщика и размер страховых выплат, а вторая - регион и ИМТ. При этом вторая компонента в данном случае положительно коррелирует и с ИМТ, и с юго-восточным регионом.
+
+Для вклада переменных в главные компоненты также можно изобразить отдельные графики:
+
+```{r, fig.width=4, fig.height=3, fig.show='hold'}
+fviz_contrib(pca_res, "var", 
+             title = "Contribution of variables to PC1, PCA") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+
+fviz_contrib(pca_res, "var", axes = 2,
+             title = "Contribution of variables to PC2, PCA") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+
+fviz_contrib(famd_res, "var", 
+             title = "Contribution of variables to PC1, FAMD") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+
+fviz_contrib(famd_res, "var", axes = 2,
+             title = "Contribution of variables to PC2, FAMD") + 
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+```
+
+**Графики по индивидам**:
+
+```{r, fig.width=4, fig.height=4, fig.show='hold'}
+fviz_pca_ind(pca_res, label = "none",
+             col.ind = "#4E79A7", alpha.ind = 0.5,
+             title = "Individuals plot, PCA") + 
+  labs(color = "Contribution", x = "PC1", y = "PC2") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+
+# fviz_pca_biplot(pca_res, label = "var", 
+#                 col.ind = "#4E79A7", alpha.ind = 0.2,
+#                 col.var = "black")
+
+fviz_famd_ind(famd_res, label = "none", invisible = "quali.var",
+              col.ind = "#4E79A7", alpha.ind = 0.5,
+              title = "Individuals plot, FAMD") + 
+  labs(color = "Contribution", x = "PC1", y = "PC2") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+```
+
+Облако точек для FAMD похоже на отражение по оси Х для облака точек в PCA - и, вероятнее всего, это так, поскольку в обоих случаях главные компоненты связаны с одними и теми же переменными, но направление корреляции со второй компонентой противоположное для этих двух подходов к методу главных компонент.
+
+<br>
+
+## **Задание 10**
+
+Выделим следующие возрастные группы: младше 25 лет, 25-34, 35-44, 45-54, 55 лет и старше, а затем отразим эту разбивку на двух последних графиках из предыдущего задания. Эллипсы добавлять не буду: они сильно сливаются друг с другом.
+
+```{r, fig.width=4, fig.height=4, fig.show='hold'}
+df <- df %>%
+  mutate(age_group = cut(age, c(0,25,35,45,55,100), 
+                         c("<25", "25-34", "35-44", "45-54", "55+"),
+                         right = FALSE))
+
+fviz_pca_ind(pca_res, label = "none", invisible = "quali",
+             pointsize = 2, pointshape = 19,
+             habillage = df$age_group, palette = "Oranges",
+             title = "Individuals plot, PCA, by age group") + 
+  labs(color = "Age", x = "PC1", y = "PC2") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom")
+
+fviz_famd_ind(famd_res, label = "none", invisible = c("quali", "quali.var"),
+              pointsize = 2,
+              habillage = df$age_group, palette = "Oranges",
+              title = "Individuals plot, FAMD, by age group") + 
+  labs(color = "Age", x = "PC1", y = "PC2") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom")
+```
+
+<br>
+
+## **Задание 11**
+
+Пусть одна переменная будет разбивать наблюдения в зависимости от размера страховых выплат: до 15 тыс. и 15 тыс. и более. (15 тыс. - это чуть ниже, чем 3-ий квартиль страховых выплат в данных - будем считать высокими выплатами всё, что выше этой границы).
+
+```{r, fig.width=4, fig.height=4, fig.show='hold'}
+df <- df %>%
+  mutate(charges_group = cut(charges, c(0,1.5e+04, max(df$charges)+1),
+                             c("<15K", "15K+"), right = FALSE))
+
+fviz_pca_ind(pca_res, label = "none", invisible = "quali",
+             pointsize = 2, pointshape = 19, alpha = 0.8, addEllipses = TRUE,
+             habillage = df$charges_group, palette = c("#A0CBE8", "#4E79A7"),
+             title = "Individuals plot, PCA, by charges") + 
+  labs(color = "Charges", x = "PC1", y = "PC2") +
+  guides(fill = "none") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom")
+
+fviz_famd_ind(famd_res, label = "none", invisible = c("quali", "quali.var"),
+             pointsize = 2, alpha = 0.8, addEllipses = TRUE,
+             habillage = df$charges_group, palette = c("#A0CBE8", "#4E79A7"),
+             title = "Individuals plot, FAMD, by charges") + 
+  labs(color = "Charges", x = "PC1", y = "PC2") +
+  guides(fill = "none") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom")
+```
+
+А вторая переменная пусть разбивает наблюдения на 4 группы в зависимости от статуса курильщика и наличия ожирения.
+
+```{r, fig.width=4, fig.height=4, fig.show='hold'}
+df <- df %>%
+  mutate(bmi_smoker = factor(case_when(bmi < 30 & smoker == "Non-smoker" ~ 1,
+                                       bmi >= 30 & smoker == "Non-smoker" ~ 2,
+                                       bmi < 30 & smoker == "Smoker" ~ 3,
+                                       bmi >= 30 & smoker == "Smoker" ~ 4),
+                             labels = c("Non-smoker, no obesity",
+                                        "Non-smoker, obesity",
+                                        "Smoker, no obesity",
+                                        "Smoker, obesity")))
+
+fviz_pca_ind(pca_res, label = "none", invisible = "quali",
+             pointsize = 2, pointshape = 19, alpha = 0.8,
+             habillage = df$bmi_smoker, addEllipses = TRUE,
+             palette = c("#A0CBE8", "#4E79A7", "#FF9D9A", "#E15759"),
+             title = "Individuals plot, PCA,\nby smoking status and obesity") + 
+  labs(color = element_blank(), x = "PC1", y = "PC2") +
+  guides(color = guide_legend(nrow = 2), fill = "none") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom")
+
+fviz_famd_ind(famd_res, label = "none", invisible = c("quali", "quali.var"),
+             pointsize = 2, alpha = 0.8,
+             habillage = df$bmi_smoker, addEllipses = TRUE,
+             palette = c("#A0CBE8", "#4E79A7", "#FF9D9A", "#E15759"),
+             title = "Individuals plot, PCA,\nby smoking status and obesity") + 
+  labs(color = element_blank(), x = "PC1", y = "PC2") +
+  guides(color = guide_legend(nrow = 2), fill = "none") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom")
+```
+
+<br>
+
+## **Задание 12**
+
+Сделаем PCA и FAMD по двум дополнительным датасетам: в одном случае добавим дамми и категориальные переменные, соответственно, для высоких страховых выплат, группе ИМТ и наличию детей, во втором - наоборот, уберём из датасета переменные для возраста, пола, количества детей, а в случае PCA - ещё и для западных регионов. Представим результаты на графиках для переменных, где по осям оставим подписи для % объяснённой дисперсии.
+
+```{r, fig.width=4, fig.height=4, fig.show='hold'}
+# Дополнительные дамми для PCA
+df_test <- as.data.frame(df_num_scaled)
+df_test$Charges_high <- scale(as.numeric(df$charges_group)-1)
+df_test$BMI_group1 <- scale(as.numeric(df$bmi < 25)-1)
+df_test$BMI_group2 <- scale(as.numeric(df$bmi >= 25 & df$bmi < 35)-1)
+df_test$BMI_group3 <- scale(as.numeric(df$bmi >= 35)-1)
+df_test$Children_y <- scale(as.numeric(df$children > 0)-1)
+pca_res_dummy <- PCA(as.matrix(df_test), scale.unit = TRUE, graph = FALSE)
+
+# PCA без части переменных
+pca_res_less <- PCA(df_num_scaled[,colnames(df_num_scaled) %in% 
+                                    c("BMI", "Smoker", "Southeast", "Northeast", "Charges")], 
+                    scale.unit = TRUE, graph = FALSE)
+
+# Дополнительные дамми для FAMD
+df_test2 <- df_mixed
+df_test2$Charges_group <- df$charges_group
+df_test2$BMI_group <- cut(df$bmi, c(0,25,35,100), right = FALSE)
+df_test2$Children_group <- factor(df$children > 0)
+famd_res_dummy <- FAMD(df_test2, graph = FALSE)
+
+# FAMD без части переменных
+famd_res_less <- FAMD(df_mixed %>% select(BMI, Charges, Smoker, Region), 
+                      graph = FALSE)
+
+fviz_pca_var(pca_res_dummy, repel = TRUE,
+             col.var = "contrib", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             title = "PCA with additional dummies") + 
+  labs(color = "Contribution") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom")
+
+fviz_pca_var(pca_res_less, repel = TRUE,
+             col.var = "contrib", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             title = "PCA with excluded variables") + 
+  labs(color = "Contribution") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom")
+
+fviz_famd_var(famd_res_dummy, repel = TRUE,
+             col.var = "contrib", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             title = "FAMD with additional dummies") + 
+  labs(color = "Contribution") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom")
+
+fviz_famd_var(famd_res_less, repel = TRUE,
+             col.var = "contrib", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             title = "FAMD with excluded variables") + 
+  labs(color = "Contribution") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.position = "bottom")
+```
+
+Получается, что, если оценивать качество по % объяснённой дисперсии, приходящемуся на первые две главные компоненты, добавление дамми переменных, созданных по имеющимся данным, не улучшает качество факторного анализа, а может даже и ухудшить. Создание подобных переменных не привносит в данные дополнительной информации (вариации), а фактически дублирует уже имеющиеся переменные, причём эти дамми содержат по сравнению с исходными (количественными) переменными меньше информации (имеют меньшую вариацию), поэтому делать такое для факторного анализа абсолютно бессмысленно.
+
+Что касается удаления переменных, то я намеренно удалила именно те, которые имели по результатам первого применения метода главных компонент наименьший вклад в первые две главные компоненты и были ими плохо представлены, - в результате, ожидаемо, качество факторного анализа улучшилось, т.к. мы убрали те переменные, которые вносили дополнительную вариацию в данных, которую не могли "уловить" первые две главные компоненты. Поступать так - только ради улучшения результатов факторного анализа - тоже не стоит, поскольку если изначально результат факторного анализа был "не очень", удаление таких "плохих" переменных из анализа приведёт к тому, что мы потеряем существенный объём информации о наблюдениях, а, возможно, именно он окажется важным фактором для какого-либо исхода, переменная для которого не была включена в исходный датасет.
