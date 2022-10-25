@@ -110,7 +110,7 @@ pl2 <- plot_ly(data = df %>%
 htmlwidgets::saveWidget(pl2, "DataVis_HW2_files/pl2.html")
 
 htmltools::tags$iframe(
-  src = file.path(getwd(), "DataVis_HW2_files/pl2.html"),
+  src = file.path("DataVis_HW2_files/pl2.html"),
   width = "800px",
   height = "600px",
   scrolling = "no",
@@ -119,7 +119,7 @@ htmltools::tags$iframe(
 )
 ```
 
-`<iframe src="D:/MyDocuments/=Data Science and ML/= Biostatistics (Bioinf)/Visualisation/DataVis_HW2_files/pl2.html" width="800px" height="600px" scrolling="no" seamless="seamless" frameBorder="0"></iframe>`{=html}
+`<iframe src="DataVis_HW2_files/pl2.html" width="800px" height="600px" scrolling="no" seamless="seamless" frameBorder="0"></iframe>`{=html}
 
 <br>
 
@@ -157,7 +157,7 @@ pl3 <- ggplotly(p3, tooltip = "text")
 htmlwidgets::saveWidget(pl3, "DataVis_HW2_files/pl3.html")
 
 htmltools::tags$iframe(
-  src = file.path(getwd(), "DataVis_HW2_files/pl3.html"),
+  src = file.path("DataVis_HW2_files/pl3.html"),
   width = "800px",
   height = "600px",
   scrolling = "no",
@@ -166,7 +166,7 @@ htmltools::tags$iframe(
 )
 ```
 
-`<iframe src="D:/MyDocuments/=Data Science and ML/= Biostatistics (Bioinf)/Visualisation/DataVis_HW2_files/pl3.html" width="800px" height="600px" scrolling="no" seamless="seamless" frameBorder="0"></iframe>`{=html}
+`<iframe src="DataVis_HW2_files/pl3.html" width="800px" height="600px" scrolling="no" seamless="seamless" frameBorder="0"></iframe>`{=html}
 
 <br>
 
@@ -228,7 +228,7 @@ pl4 <- ggplotly(p4)
 htmlwidgets::saveWidget(pl4, "DataVis_HW2_files/pl4.html")
 
 htmltools::tags$iframe(
-  src = file.path(getwd(), "DataVis_HW2_files/pl4.html"),
+  src = file.path("DataVis_HW2_files/pl4.html"),
   width = "400px",
   height = "400px",
   scrolling = "no",
@@ -237,7 +237,7 @@ htmltools::tags$iframe(
 )
 ```
 
-`<iframe src="D:/MyDocuments/=Data Science and ML/= Biostatistics (Bioinf)/Visualisation/DataVis_HW2_files/pl4.html" width="400px" height="400px" scrolling="no" seamless="seamless" frameBorder="0"></iframe>`{=html}
+`<iframe src="DataVis_HW2_files/pl4.html" width="400px" height="400px" scrolling="no" seamless="seamless" frameBorder="0"></iframe>`{=html}
 
 <br>
 
