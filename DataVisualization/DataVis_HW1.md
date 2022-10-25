@@ -5,7 +5,6 @@ output:
   html_document:
     code_folding: hide
     toc: yes
-    toc_depth: 3
     toc_float: true
     theme: flatly
     keep_md: true
@@ -24,7 +23,6 @@ library(lemon)
 library(colorspace)
 
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
-# options(scipen = 999, encoding = "UTF-8")
 
 # Основные параметры темы для графиков
 theme_params <- function(...) {
