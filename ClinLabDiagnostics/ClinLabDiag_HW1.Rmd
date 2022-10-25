@@ -1,0 +1,142 @@
+---
+title: "Клинико-лабораторная диагностика, ДЗ №1"
+author: "Мироненко Ольга"
+output:
+  pdf_document:
+    latex_engine: xelatex
+header-includes:
+- \usepackage{polyglossia}
+- \setdefaultlanguage{russian}
+- \newfontfamily{\cyrillicfont}{Times New Roman} 
+- \newfontfamily{\cyrillicfontrm}{Times New Roman}
+- \newfontfamily{\cyrillicfonttt}{Courier New}
+- \newfontfamily{\cyrillicfontsf}{Arial}
+fontsize: 12pt
+geometry: margin=2cm
+papersize: a4
+urlcolor: blue
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, warning = FALSE, message = FALSE}
+library(tidyverse)
+library(pROC)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, 
+                      message = FALSE, error = FALSE)
+
+df <- read.csv("diabetes.csv")
+summary(df)
+```
+
+## **Задание 1**
+
+<br>
+
+```{r}
+df <- df %>%
+  # Заменим нули на пропускм для тех количественных переменных,
+  # которые не могут принимать нулевые значения
+  mutate_at(vars(Glucose, BloodPressure, SkinThickness, Insulin, BMI),
+            ~ ifelse(. == 0, NA, .)) %>%
+  # Переведем мг/дл в ммоль/л для глюкозы и выделим пациентов с НТГ
+  mutate(Glucose_mml = Glucose/18,
+         IGT = Glucose_mml >= 7.8)
+
+table(df$IGT)
+```
+
+Таким образом, НТГ отсутствует у `r sum(!df$IGT, na.rm = TRUE)` пациента.
+
+<br>
+
+## **Задание 2**
+
+Построим ROC-кривую для предсказания сахарного диабета по уровню глюкозы, измеренному в ммоль/л.
+
+```{r, fig.width=4, fig.height=4}
+roc_gluc <- roc(Outcome ~ Glucose_mml, data = df, ci = TRUE)
+
+ggroc(roc_gluc, color = "#4E79A7", size = 1.5) +
+  scale_x_reverse(expand = c(0,0),
+                  breaks = seq(0,1,0.2)) +
+  scale_y_continuous(expand = c(0,0),
+                     breaks = seq(0,1,0.2)) +
+  labs(x = "Specificity", y = "Sensitivity",
+       title = "ROC curve, diabetes vs. glucose") +
+  theme_bw(base_size = 12) +
+  theme(axis.title = element_text(face = "bold"),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+```
+
+<br>
+
+## **Задание 3**
+
+```{r}
+roc_gluc$auc
+```
+
+<br>
+
+## **Задание 4**
+
+```{r}
+roc_gluc$ci
+```
+
+<br>
+
+## **Задание 5**
+
+Ответы на графике (в качестве оптимальной была выбрана точка, наиболее близкая к верхнему левому углу графика - я проверила, она совпадает с лучшим рещением по критерию Youden's J):
+
+```{r, fig.width=4, fig.height=4}
+roc_ins <- roc(Outcome ~ Insulin, data = df, ci = TRUE)
+roc_ins_best <- roc_ins %>% 
+  coords(x = "best", best.method = "closest.topleft") %>%
+  mutate(lbl = sprintf("Threshold for insulin = %d\n  Sensitivity = %.2f\n  Specificity = %.2f",
+                       threshold, sensitivity, specificity))
+
+ggroc(roc_ins, color = "#4E79A7", size = 1.5) +
+  geom_line(aes(x = x, y = y),
+            data.frame(x = c(1, roc_ins_best$specificity),
+                       y = roc_ins_best$sensitivity),
+            linetype = "dashed", size = 0.5, color =  "grey50") +
+  geom_line(aes(x = x, y = y),
+            data.frame(x = roc_ins_best$specificity,
+                       y = c(0, roc_ins_best$sensitivity)),
+            linetype = "dashed", size = 0.5, color =  "grey50") +
+  geom_point(aes(x = specificity, y = sensitivity), roc_ins_best,
+             color = "#E15759", size = 3) +
+  geom_text(aes(x = specificity, y = sensitivity, label = lbl),
+            roc_ins_best, hjust = -0.1, vjust = 1) +
+  scale_x_reverse(expand = c(0,0),
+                  breaks = seq(0,1,0.2)) +
+  scale_y_continuous(expand = c(0,0),
+                     breaks = seq(0,1,0.2)) +
+  labs(x = "Specificity", y = "Sensitivity",
+       title = "ROC curve, diabetes vs. insulin") +
+  theme_bw(base_size = 12) +
+  theme(axis.title = element_text(face = "bold"),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+```
+
+<br>
+
+## **Задание 6**
+
+```{r}
+df %>% 
+  select(-Glucose, -IGT) %>% 
+  pivot_longer(cols = -Outcome, names_to = "Variable") %>% 
+  group_by(Variable) %>% 
+  summarise(AUC = roc(Outcome, value, ci = T)$ci[2] %>% round(3)) %>%
+  arrange(-AUC) %>%
+  gt::gt()
+```
+
+Таким образом, максимальную площадь под ROC-кривой даёт предсказание диабета по уровню глюкозы: если исходить из определения, данного вами для сахарного диабета (хроническое эндокринное заболевание,
+сопровождающееся повышенным уровнем глюкозы), то это было ожидаемо, а точность прогнозирования по данному критерию не 100%-ная, скорее всего, потому, что это не единственный критерий постановки диагноза "сахарный диабет", или потому, что нам неизвестно, как в этом датасете соотносятся моменты замеров глюкозы и статуса по диабету.
+
+Минимальную площадь под кривой имеет вероятность наличия диабета на основании наследственного анамнеза - скорее всего, потому, что не все типы диабета являются наследственными/ развиваются вследствие генетической предрасположенности.
