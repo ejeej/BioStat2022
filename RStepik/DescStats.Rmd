@@ -70,6 +70,8 @@ pval <- function(variable, groupvar) {
   }
 }
 
+# Функция для создания текста примечания по использованным стат.тестам
+
 test_note <- function(data, groupvarname) {
   # data - датафрейм с группирующей переменной и всеми сравниваемыми переменными
   # groupvarname - название группирующей переменной
@@ -286,7 +288,8 @@ tbl %>%
   fontsize(size = 12, part = "header") %>%
   fontsize(size = 10, part = "footer") %>%
   line_spacing(i = rows_stats, space = 0.5, part = "body") %>%
-  padding(j = 2:cols_num, padding.left = 0.5, padding.right = 0.5, part = "all")
+  padding(j = 2:cols_num, padding.left = 0.5, padding.right = 0.5, part = "all") %>%
+  fix_border_issues()
 ```
 
 <br>
@@ -446,5 +449,41 @@ tbl %>%
   fontsize(size = 10, part = "footer") %>%
   line_spacing(i = rows_stats, space = 0.5, part = "body") %>%
   padding(j = 2:cols_num, padding.left = 0.5, padding.right = 0.5, part = "all") %>%
+  fix_border_issues()
+```
+
+<br>
+
+\newpage
+
+Заметим, что p-values в таблицах 2 выше получились абсолютно идентичными для обоих визитов. Если для каждого наблюдения в выборке рассчитать изменение каждого показателя крови между визитами, то можно заметить (см. табл.3), что по всем показателям, кроме гемоглобина, изменение было абсолютно одинаковым для всех наблюдений в выборке, для гемоглобина встречается 2 уникальных значения изменения, и то они различаются только четвертым знаком после запятой (что, вероятнее всего, связано со спецификой хранения R-ом десятичных чисел в памяти компьютера, тогда как в действительности, если ту же разницу посчитать в Экселе, то она будет абсолютно одинаковой для всех наблюдений). Иными словами, для всех наблюдений значение на втором визите было получено сдвигом вправо значения на первом визите на одинаковую для каждого показателя крови величину - отсюда и идентичные значения p-values при сравнении групп внутри каждого визита (разница в средних значениях между группами по каждому показателю не изменилась между визитами).
+
+#### Таблица 3
+#### Изменение показателей крови между визитами
+
+```{r}
+tbl <- df_visits %>% 
+  group_by(ID) %>% 
+  summarise(`Группа` = unique(`Группа`), 
+            across(where(is.numeric), ~.[`Визит` == "Визит 2"] - .[`Визит` == "Визит 1"])) %>%
+  select(-ID) %>%
+  tbl_summary(by = "Группа") %>%
+  modify_header(all_stat_cols() ~ "**{level}**\nN = {n}",
+                label = "**Разница (Визит 2 - Визит 1)**") %>%
+  modify_footnote(everything() ~ NA) %>%
+  bold_labels()
+
+rows_varnames <- which(tbl$table_body$row_type == "label")
+
+tbl %>%
+  as_flex_table() %>%
+  bold(part = "header") %>%
+  align(part = "header", align = "center") %>%
+  border_inner_v() %>%
+  border(rows_varnames, border.top = fp_border_default()) %>%
+  font(part = "all", fontname = "Calibri") %>%
+  fontsize(size = 11, part = "body") %>%
+  fontsize(size = 12, part = "header") %>%
+  fontsize(size = 11, part = "footer") %>%
   fix_border_issues()
 ```
