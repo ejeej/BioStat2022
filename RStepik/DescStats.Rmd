@@ -1,0 +1,450 @@
+---
+title: "Описательная статистика"
+author: "Мироненко Ольга"
+date: "`r Sys.Date()`"
+output: 
+  word_document:
+    reference_docx: DocTemplate.docx
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(labelled)
+library(flextable)
+library(gtsummary)
+
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+df <- read_excel("data_excel.xlsx")
+
+str(df)
+table(df$Группа)
+table(df$Пол)
+table(df$`Группа крови`)
+
+# Преобразование данных
+
+df <- df %>%
+  mutate_at(vars(`Базофилы_E1`:`Эритроциты_E2`), ~ gsub(",", ".", .) %>% as.numeric()) %>%
+  mutate_at(vars(`Группа`, `Пол`), ~ factor(.)) %>%
+  mutate(`Группа крови` = factor(`Группа крови`, c("O (I)", "A (II)", "B (III)", "AB (IV)")))
+
+  # Данные по пациентам (baseline)
+
+df_pat <- df %>% select(`Группа`, `Возраст`, `Пол`, `Рост`, `Группа крови`)
+
+  # Данные по визитам (показатели крови)
+
+df_visits <- df %>%
+  select(`Группа`, contains("E1"), contains("E2")) %>%
+  mutate(ID = row_number()) %>%
+  pivot_longer(!c(`Группа`, ID), names_to = "variable") %>%
+  separate(col = variable, into = c("variable", "Визит"), sep = "_") %>%
+  pivot_wider(id_cols = c(ID, `Группа`, `Визит`), names_from = variable, 
+              values_from = value) %>%
+  mutate(`Визит` = factor(`Визит`, c("E1", "E2"), c("Визит 1", "Визит 2")))
+
+# Присвоим переменным лейблы, чтобы потом можно было к ним обращаться
+
+var_label(df_pat) <- names(df_pat) %>% as.list() %>% setNames(names(df_pat))
+var_label(df_visits) <- names(df_visits) %>% as.list() %>% setNames(names(df_visits))
+
+# Функция для получения p-value для сравнения средних значений количественной
+# переменной или распределения категориальной переменной между группами
+
+pval <- function(variable, groupvar) {
+  # variable - вектор-столбец со значениями переменной для сравнения
+  # groupvar - вектор-столбец со значениями группирующей переменной
+  
+  if (is.numeric(variable)) {
+    if (length(unique(c(levels(groupvar[[1]]), unique(as.character(na.omit(groupvar[[1]])))))) > 2) {
+      summary(aov(variable ~ groupvar))$`Pr(>F)`
+    } else {
+      t.test(variable ~ groupvar)$p.value
+    }
+  } else {
+    chisq.test(table(variable, groupvar), correct = FALSE)$p.value
+  }
+}
+
+test_note <- function(data, groupvarname) {
+  # data - датафрейм с группирующей переменной и всеми сравниваемыми переменными
+  # groupvarname - название группирующей переменной
+
+  if (is.factor(data[[groupvarname]])) {
+    lvls <- levels(data[[groupvarname]])
+  } else {
+    lvls <- na.omit(unique(data[[groupvarname]]))
+  }
+  
+  if (length(lvls) > 2) {
+    if (sum(map_lgl(data %>% select(-all_of(groupvarname)), is.numeric)) < ncol(data)-1) {
+      ftnote <- "One-way ANOVA; Pearson's Chi-squared test"
+    } else {
+      ftnote <- "One-way ANOVA"
+    }
+  } else {
+    if (sum(map_lgl(data %>% select(-all_of(groupvarname)), is.numeric)) < ncol(data)-1) {
+      ftnote <- "Welch Two Sample t-test; Pearson's Chi-squared test"
+    } else {
+      ftnote <- "Welch Two Sample t-test"
+    }
+  }
+  
+  return(ftnote)
+}
+
+# Функция для получения таблицы с описательными статистиками по всем переменным
+# в разбивке по группам + p-values с помощью пакета gtsummary
+
+tbl_summary_mod <- function(data, groupvarname, ndigits = 1) {
+  # groupvarname - название группирующей переменной
+  # ndigits - кол-во знаков после запятой для статистик кол.переменных
+  
+  vars_int <- map_lgl(data, function(x) is.numeric(x) & rlang::is_integerish(x))
+  vars_int <- names(vars_int[which(vars_int)])
+  
+  digits <- list(all_continuous() ~ c(0, rep(ndigits, 7)))
+  
+  if (length(vars_int) > 0) {
+      digits <- c(digits, 
+                  all_of(vars_int) ~ c(0, rep(ndigits, 2), rep(0, 5)))
+  }
+
+  tbl <- tbl_summary(data, by = groupvarname,
+                     type = all_continuous() ~ "continuous2",
+                     statistic = list(
+                       all_continuous() ~ c("{N_nonmiss}", "{mean} ({sd})", 
+                                            "{median} ({p25}-{p75})", "{min}-{max}"),
+                       all_categorical() ~ c("{n}/{N} ({p}%)")),
+                     digits = digits,
+                     missing_text = "Н.Д.") %>%
+    add_stat_label(label = list(
+      all_continuous() ~ c("N", "Среднее (Станд.откл.)",
+                           "Медиана (Q1-Q3)", "Минимум-Максимум"))) %>%
+    add_p(test = list(
+      all_continuous() ~ "aov", 
+      all_categorical() ~ "chisq.test.no.correct"),
+      pvalue_fun = function(x) style_pvalue(x, digits = 3)) %>%
+    modify_header(all_stat_cols() ~ "**{level}**\nN = {n}",
+                  label = "**Характеристика**") %>%
+    modify_table_body(
+      ~ .x %>%
+        mutate_at(vars(stat_1, stat_2),
+                  ~ gsub("NA \\(NA\\)|NA \\(NA-NA\\)|Inf--Inf", "Н.П.", .))) %>%
+    modify_footnote(p.value ~ test_note(data, groupvarname)) %>%
+    bold_labels()
+}
+
+# Функция для получения описательных статистик по количественной переменной
+
+stat_cont <- function(x, varname, ndigits = 1) {
+  # x - вектор-столбец со значениями переменной
+  # varname - имя переменной x
+  # ndigits - кол-во знаков после запятой для статистик переменных с десятичными знаками
+  
+  tabres <- tribble(
+    ~row_label, ~stat_label, ~stat_value,
+    paste0(varname, "_0"), attr(x, "label"), "",
+    paste0(varname, "_1"), "N", sum(!is.na(x)) %>% as.character(),
+    paste0(varname, "_2"), "Среднее (Станд.откл.)", ifelse(sum(!is.na(x)) == 0, "Н.П.",
+                                                           sprintf(sprintf("%%.%df (%%.%df)",
+                                                                           ndigits, ndigits),
+                                                                   mean(x, na.rm = TRUE), 
+                                                                   sd(x, na.rm = TRUE)))
+  )
+  if (rlang::is_integerish(x)) {
+    tabres <- rbind(
+      tabres,
+      tribble(
+        ~row_label, ~stat_label, ~stat_value,
+        paste0(varname, "_3"), "Медиана (Q1-Q3)", ifelse(sum(!is.na(x)) == 0, "Н.П.",
+                                                         sprintf("%.0f (%.0f-%.0f)", 
+                                                                 median(x, na.rm = TRUE), 
+                                                                 quantile(x, 0.25, na.rm = TRUE), 
+                                                                 quantile(x, 0.75, na.rm = TRUE))),
+        paste0(varname, "_4"), "Минимум-Максимум", ifelse(sum(!is.na(x)) == 0, "Н.П.",
+                                                          sprintf("%.0f-%.0f", 
+                                                                  min(x, na.rm = TRUE),
+                                                                  max(x, na.rm = TRUE)))
+      ))
+  } else {
+    tabres <- rbind(
+      tabres,
+      tribble(
+        ~row_label, ~stat_label, ~stat_value,
+        paste0(varname, "_3"), "Медиана (Q1-Q3)", ifelse(sum(!is.na(x)) == 0, "Н.П.",
+                                                         sprintf(sprintf("%%.%df (%%.%df-%%.%df)",
+                                                                           ndigits, ndigits, ndigits),
+                                                                 median(x, na.rm = TRUE), 
+                                                                 quantile(x, 0.25, na.rm = TRUE), 
+                                                                 quantile(x, 0.75, na.rm = TRUE))),
+        paste0(varname, "_4"), "Минимум-Максимум", ifelse(sum(!is.na(x)) == 0, "Н.П.",
+                                                          sprintf(sprintf("%%.%df-%%.%df",
+                                                                           ndigits, ndigits), 
+                                                                  min(x, na.rm = TRUE),
+                                                                  max(x, na.rm = TRUE)))
+      ))
+  }
+  
+  if (sum(is.na(x)) > 0) {
+    tabres <- rbind(tabres, c(paste0(varname, "_mis"), "Н.Д.", sum(is.na(x)) %>% as.character()))
+  }
+  
+  return(tabres)
+}
+
+# Функция для получения описательных статистик по категориальной переменной
+
+stat_cat <- function(x, varname) {
+  # x - вектор-столбец со значениями переменной
+  # varname - имя переменной x
+  
+  if (is.factor(x)) {
+    cats <- tibble(stat_label = levels(x),
+                   row_label = sprintf("%s_%s", varname, 
+                                  str_pad(1:length(stat_label), nchar(length(stat_label)), 
+                                          "left", "0")))
+  } else {
+    cats <- tibble(stat_label = na.omit(unique(x)),
+                   row_label = sprintf("%s_%s", varname, x)) 
+  }
+  
+  tabres <- table(x) %>% 
+    as_tibble() %>%
+    mutate(stat_value = sprintf("%d/%d (%.0f%%)", n, sum(n), n/sum(n)*100)) %>%
+    rename(stat_label = x) %>%
+    left_join(cats, by = "stat_label") %>%
+    select(row_label, stat_label, stat_value)
+  
+  if (sum(is.na(x)) > 0) {
+    tabres <- rbind(tabres, c(paste0(varname, "_mis"), "Н.Д.", sum(is.na(x))))
+  }
+  
+  tabres <- rbind(c(paste0(varname, "_0"), attr(x, "label"), ""),
+                  tabres)
+  
+  return(tabres)
+}
+
+# Функция для получения описательных статистик по переменной в зависимости от её типа
+
+stat_all <- function(x, varname, ndigits = 1) {
+  # x - вектор-столбец со значениями переменной
+  # varname - имя переменной x
+  # ndigits - кол-во знаков после запятой для статистик переменных с десятичными знаками
+
+    if (is.numeric(x)) {
+    stat_cont(x, varname, ndigits)
+  } else {
+    stat_cat(x, varname)
+  }
+}
+
+```
+
+<br>
+
+Я выполню задания в двух вариантах: 
+
+-- таблицы будут сформированы с помощью готовых функций из пакета `gtsummary` и "доформатированы" с помощью функций из пакета `flextable`,
+
+-- таблицы будут сформированы "вручную" с помощью функций из пакетов `dplyr` и `purrr` и отформатированы с помощью функций из пакета `flextable` по аналогии с тем, как это было показано в материалах курса.
+
+
+## Данные по пациентам
+
+В табл.1 представим данные по характеристикам пациентов каждой группы на момент включения в исследование. Сравнение средних значений количественных переменных между группами будет производиться с помощью `r ifelse(length(levels(df_pat$Группа)) == 2, "t-теста", "one-way ANOVA")`, распределений категориальных признаков - с помощью теста Хи-квадрат. 
+
+<br>
+
+#### Таблица 1 (gtsummary + flextable)
+#### Описательная статистика по пациентам
+
+```{r}
+tbl <- tbl_summary_mod(df_pat, "Группа")
+
+rows_varnames <- which(tbl$table_body$row_type == "label")
+rows_stats <- which(tbl$table_body$row_type != "label")
+
+cols_num <- sum(!tbl$table_styling$header$hide)
+
+tbl %>%
+  as_flex_table() %>%
+  bold(part = "header") %>%
+  align(part = "header", align = "center") %>%
+  width(1, 5, "cm") %>%
+  width(2:(cols_num-1), 3, "cm") %>%
+  width(cols_num, 2, "cm") %>%
+  border_inner_v() %>%
+  border(rows_varnames, border.top = fp_border_default()) %>%
+  font(part = "all", fontname = "Calibri") %>%
+  fontsize(size = 11, part = "body") %>%
+  fontsize(size = 12, part = "header") %>%
+  fontsize(size = 10, part = "footer") %>%
+  line_spacing(i = rows_stats, space = 0.5, part = "body") %>%
+  padding(j = 2:cols_num, padding.left = 0.5, padding.right = 0.5, part = "all")
+```
+
+<br>
+
+#### Таблица 1 (dplyr + purrr + flextable)
+#### Описательная статистика по пациентам
+
+```{r}
+pvals <- df_pat %>%
+  summarise(across(-`Группа`, ~ pval(., .data$`Группа`),
+                   .names = "{.col}_0")) %>%
+  pivot_longer(cols = everything(), names_to = "row_label", values_to = "p-value") %>%
+  mutate(`p-value` = style_pvalue(`p-value`, 3))
+  
+tbl <- df_pat %>%
+  nest_by(`Группа`) %>%
+  mutate(`Группа` = sprintf("%s\nN = %d", `Группа`, nrow(data)),
+         groupres = list(imap_dfr(data, stat_all))) %>% 
+  select(`Группа`, groupres) %>% 
+  unnest(groupres) %>% 
+  pivot_wider(id_cols = c(row_label, stat_label),
+              names_from = `Группа`, values_from = stat_value) %>%
+  left_join(pvals, by = "row_label") %>%
+  rename(`Характеристика` = stat_label)
+
+rows_varnames <- which(str_ends(tbl$row_label, "_0"))
+rows_stats <- which(!str_ends(tbl$row_label, "_0"))
+cols_num <- ncol(tbl) - 1
+
+tbl %>%
+  select(-row_label) %>%
+  flextable() %>%
+  padding(rows_stats, 1, padding.left = 10) %>%
+  bold(rows_varnames, 1) %>%
+  bold(part = "header") %>%
+  align(j = 2:cols_num, align = "center") %>%
+  align(part = "header", align = "center") %>%
+  width(1, 5, "cm") %>%
+  width(2:(cols_num-1), 3, "cm") %>%
+  width(cols_num, 2, "cm") %>%
+  border_inner_v() %>%
+  border(rows_varnames, border.top = fp_border_default()) %>%
+  footnote(i = 1, j = cols_num, part = "header",
+           value = as_paragraph(test_note(df_pat, "Группа")),
+           ref_symbols = "1") %>%
+  font(part = "all", fontname = "Calibri") %>%
+  fontsize(size = 11, part = "body") %>%
+  fontsize(size = 12, part = "header") %>%
+  fontsize(size = 10, part = "footer") %>%
+  line_spacing(i = rows_stats, space = 0.5, part = "body") %>%
+  padding(j = 2:cols_num, padding.left = 0.5, padding.right = 0.5, part = "all")
+```
+
+<br>
+
+## Данные по показателям крови по визитам
+
+#### Таблица 2 (gtsummary + flextable)
+#### Описательная статистика по показателям крови по визитам
+
+```{r}
+tbl <- df_visits %>% 
+  select(-ID) %>% 
+  nest_by(`Визит`) %>%
+  mutate(visres = list(tbl_summary_mod(data, "Группа")))
+
+tbl <- tbl_merge(tbl$visres, tab_spanner = levels(df_visits$`Визит`)) %>%
+  modify_spanning_header(label ~ "Характеристика")
+
+rows_varnames <- which(tbl$table_body$row_type == "label")
+rows_stats <- which(tbl$table_body$row_type != "label")
+
+cols_p <- which(grepl("p.value_", tbl$table_styling$header %>% filter(!hide) %>% pull(column)))
+cols_stat <- which(grepl("stat_", tbl$table_styling$header %>% filter(!hide) %>% pull(column)))
+cols_num <- sum(!tbl$table_styling$header$hide)
+
+tbl %>%
+  as_flex_table() %>%
+  bold(part = "header") %>%
+  align(part = "header", align = "center") %>%
+  width(1, 4.5, "cm") %>%
+  width(cols_stat, 2.5, "cm") %>%
+  width(cols_p, 1.5, "cm") %>%
+  border_inner_v() %>%
+  border(rows_varnames, border.top = fp_border_default()) %>%
+  merge_v(j = 1, part = "header") %>%
+  font(part = "all", fontname = "Calibri") %>%
+  fontsize(size = 10, part = "body") %>%
+  fontsize(size = 11, part = "header") %>%
+  fontsize(size = 10, part = "footer") %>%
+  line_spacing(i = rows_stats, space = 0.5, part = "body") %>%
+  padding(j = 2:cols_num, padding.left = 0.5, padding.right = 0.5, part = "all") %>%
+  fix_border_issues()
+```
+
+\newpage
+
+#### Таблица 2 (dplyr + purrr + flextable)
+#### Описательная статистика по показателям крови по визитам
+
+```{r}
+pvals <- df_visits %>%
+  select(-ID) %>%
+  group_by(`Визит`) %>%
+  summarise(across(-`Группа`, ~ pval(., .data$`Группа`),
+                   .names = "{.col}_0")) %>%
+  pivot_longer(cols = -`Визит`, names_to = "row_label", values_to = "p-value") %>%
+  mutate(`p-value` = style_pvalue(`p-value`, 3))
+
+tbl <- df_visits %>%
+  select(-ID) %>%
+  nest_by(`Визит`, `Группа`) %>%
+  mutate(`Группа` = sprintf("%s\nN = %d", `Группа`, nrow(data)),
+         groupres = list(imap_dfr(data, stat_all))) %>% 
+  unnest(groupres) %>% 
+  pivot_wider(id_cols = c(`Визит`, row_label, stat_label),
+              names_from = `Группа`, values_from = stat_value) %>% 
+  left_join(pvals, by = c("Визит", "row_label")) %>%
+  pivot_wider(id_cols = c(row_label, stat_label),
+              names_from = `Визит`, values_from = !c(`Визит`, row_label, stat_label)) %>%
+  rename(`Характеристика` = stat_label)
+
+rows_varnames <- which(str_ends(tbl$row_label, "_0"))
+rows_stats <- which(!str_ends(tbl$row_label, "_0"))
+
+tbl <- tbl %>% select(`Характеристика`, ends_with(levels(df_visits$Визит)))
+subheaders <- gsub(paste(paste0("_", levels(df_visits$Визит)), collapse = "|"),
+                   "", names(tbl))
+
+cols_p <- which(grepl("p-value", names(tbl)))
+cols_stat <- which(grepl(paste(levels(df_visits$`Визит`), collapse = "|"), names(tbl)))
+cols_num <- ncol(tbl)
+
+tbl %>%
+  flextable() %>%
+  set_header_labels(values = setNames(as.list(subheaders), names(tbl))) %>%
+  padding(rows_stats, 1, padding.left = 10) %>%
+  bold(rows_varnames, 1) %>%
+  bold(part = "header") %>%
+  align(j = 2:cols_num, align = "center") %>%
+  align(part = "header", align = "center") %>%
+  width(1, 4.5, "cm") %>%
+  width(cols_stat, 2.5, "cm") %>%
+  width(cols_p, 1.5, "cm") %>%
+  border_inner_v() %>%
+  border(rows_varnames, border.top = fp_border_default()) %>%
+  footnote(i = 1, j = cols_p, part = "header",
+           value = as_paragraph(test_note(df_visits %>% select(!c(ID, `Визит`)), "Группа")),
+           ref_symbols = "1") %>%
+  add_header_row(values = c("Характеристика", levels(df_visits$`Визит`)),
+                 colwidths = c(1, rep(length(levels(df_visits$`Группа`)) + 1, 
+                                      length(levels(df_visits$`Визит`))))) %>%
+  merge_v(j = 1, part = "header") %>%
+  font(part = "all", fontname = "Calibri") %>%
+  fontsize(size = 10, part = "body") %>%
+  fontsize(size = 11, part = "header") %>%
+  fontsize(size = 10, part = "footer") %>%
+  line_spacing(i = rows_stats, space = 0.5, part = "body") %>%
+  padding(j = 2:cols_num, padding.left = 0.5, padding.right = 0.5, part = "all") %>%
+  fix_border_issues()
+```
