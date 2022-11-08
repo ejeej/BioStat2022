@@ -18,7 +18,10 @@ library(gtsummary)
 
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 
-df <- read_excel("data_excel.xlsx")
+df <- read_excel("data_excel.xlsx", sheet = "data")
+visits <- read_excel("data_excel.xlsx", sheet = "Визиты", col_names = FALSE) %>%
+  setNames(c("level", "label")) %>%
+  arrange(level)
 
 str(df)
 table(df$Группа)
@@ -32,6 +35,11 @@ df <- df %>%
   mutate_at(vars(`Группа`, `Пол`), ~ factor(.)) %>%
   mutate(`Группа крови` = factor(`Группа крови`, c("O (I)", "A (II)", "B (III)", "AB (IV)")))
 
+summary(df)
+
+df <- df %>%
+  mutate_at(vars(`Базофилы_E1`:`Эритроциты_E2`), ~ ifelse(. <= 0, NA, .))
+
   # Данные по пациентам (baseline)
 
 df_pat <- df %>% select(`Группа`, `Возраст`, `Пол`, `Рост`, `Группа крови`)
@@ -39,13 +47,13 @@ df_pat <- df %>% select(`Группа`, `Возраст`, `Пол`, `Рост`, 
   # Данные по визитам (показатели крови)
 
 df_visits <- df %>%
-  select(`Группа`, contains("E1"), contains("E2")) %>%
+  select(`Группа`, matches(visits$level)) %>%
   mutate(ID = row_number()) %>%
   pivot_longer(!c(`Группа`, ID), names_to = "variable") %>%
   separate(col = variable, into = c("variable", "Визит"), sep = "_") %>%
   pivot_wider(id_cols = c(ID, `Группа`, `Визит`), names_from = variable, 
               values_from = value) %>%
-  mutate(`Визит` = factor(`Визит`, c("E1", "E2"), c("Визит 1", "Визит 2")))
+  mutate(`Визит` = factor(`Визит`, visits$level, visits$label))
 
 # Присвоим переменным лейблы, чтобы потом можно было к ним обращаться
 
@@ -193,7 +201,7 @@ stat_cont <- function(x, varname, ndigits = 1) {
   }
   
   if (sum(is.na(x)) > 0) {
-    tabres <- rbind(tabres, c(paste0(varname, "_mis"), "Н.Д.", sum(is.na(x)) %>% as.character()))
+    tabres <- rbind(tabres, c(paste0(varname, "_5"), "Н.Д.", sum(is.na(x)) %>% as.character()))
   }
   
   return(tabres)
@@ -250,7 +258,9 @@ stat_all <- function(x, varname, ndigits = 1) {
 
 <br>
 
-Я выполню задания в двух вариантах: 
+1. Единицы измерения показателей крови в имеющихся данных не указаны, как и границы их возможных значений, но будем исходить из того, что они могут принимать только положительные значения, поэтому все неположительные значения, обнаруженные при предварительном анализе данных, заменим на пропуски.
+
+2. Я выполню задания в двух вариантах: 
 
 -- таблицы будут сформированы с помощью готовых функций из пакета `gtsummary` и "доформатированы" с помощью функций из пакета `flextable`,
 
@@ -261,7 +271,6 @@ stat_all <- function(x, varname, ndigits = 1) {
 
 В табл.1 представим данные по характеристикам пациентов каждой группы на момент включения в исследование. Сравнение средних значений количественных переменных между группами будет производиться с помощью `r ifelse(length(levels(df_pat$Группа)) == 2, "t-теста", "one-way ANOVA")`, распределений категориальных признаков - с помощью теста Хи-квадрат. 
 
-<br>
 
 #### Таблица 1 (gtsummary + flextable)
 #### Описательная статистика по пациентам
@@ -287,12 +296,11 @@ tbl %>%
   fontsize(size = 11, part = "body") %>%
   fontsize(size = 12, part = "header") %>%
   fontsize(size = 10, part = "footer") %>%
-  line_spacing(i = rows_stats, space = 0.5, part = "body") %>%
+  line_spacing(i = rows_stats, space = 0.4, part = "body") %>%
   padding(j = 2:cols_num, padding.left = 0.5, padding.right = 0.5, part = "all") %>%
   fix_border_issues()
 ```
 
-<br>
 
 #### Таблица 1 (dplyr + purrr + flextable)
 #### Описательная статистика по пациентам
@@ -339,7 +347,7 @@ tbl %>%
   fontsize(size = 11, part = "body") %>%
   fontsize(size = 12, part = "header") %>%
   fontsize(size = 10, part = "footer") %>%
-  line_spacing(i = rows_stats, space = 0.5, part = "body") %>%
+  line_spacing(i = rows_stats, space = 0.4, part = "body") %>%
   padding(j = 2:cols_num, padding.left = 0.5, padding.right = 0.5, part = "all")
 ```
 
@@ -354,7 +362,7 @@ tbl %>%
 tbl <- df_visits %>% 
   select(-ID) %>% 
   nest_by(`Визит`) %>%
-  mutate(visres = list(tbl_summary_mod(data, "Группа")))
+  mutate(visres = list(tbl_summary_mod(data, "Группа", 2)))
 
 tbl <- tbl_merge(tbl$visres, tab_spanner = levels(df_visits$`Визит`)) %>%
   modify_spanning_header(label ~ "Характеристика")
@@ -380,7 +388,7 @@ tbl %>%
   fontsize(size = 10, part = "body") %>%
   fontsize(size = 11, part = "header") %>%
   fontsize(size = 10, part = "footer") %>%
-  line_spacing(i = rows_stats, space = 0.5, part = "body") %>%
+  line_spacing(i = rows_stats, space = 0.4, part = "body") %>%
   padding(j = 2:cols_num, padding.left = 0.5, padding.right = 0.5, part = "all") %>%
   fix_border_issues()
 ```
@@ -403,7 +411,7 @@ tbl <- df_visits %>%
   select(-ID) %>%
   nest_by(`Визит`, `Группа`) %>%
   mutate(`Группа` = sprintf("%s\nN = %d", `Группа`, nrow(data)),
-         groupres = list(imap_dfr(data, stat_all))) %>% 
+         groupres = list(imap_dfr(data, stat_all, ndigits = 2))) %>% 
   unnest(groupres) %>% 
   pivot_wider(id_cols = c(`Визит`, row_label, stat_label),
               names_from = `Группа`, values_from = stat_value) %>% 
@@ -447,7 +455,7 @@ tbl %>%
   fontsize(size = 10, part = "body") %>%
   fontsize(size = 11, part = "header") %>%
   fontsize(size = 10, part = "footer") %>%
-  line_spacing(i = rows_stats, space = 0.5, part = "body") %>%
+  line_spacing(i = rows_stats, space = 0.4, part = "body") %>%
   padding(j = 2:cols_num, padding.left = 0.5, padding.right = 0.5, part = "all") %>%
   fix_border_issues()
 ```
@@ -456,7 +464,7 @@ tbl %>%
 
 \newpage
 
-Заметим, что p-values в таблицах 2 выше получились абсолютно идентичными для обоих визитов. Если для каждого наблюдения в выборке рассчитать изменение каждого показателя крови между визитами, то можно заметить (см. табл.3), что по всем показателям, кроме гемоглобина, изменение было абсолютно одинаковым для всех наблюдений в выборке, для гемоглобина встречается 2 уникальных значения изменения, и то они различаются только четвертым знаком после запятой (что, вероятнее всего, связано со спецификой хранения R-ом десятичных чисел в памяти компьютера, тогда как в действительности, если ту же разницу посчитать в Экселе, то она будет абсолютно одинаковой для всех наблюдений). Иными словами, для всех наблюдений значение на втором визите было получено сдвигом вправо значения на первом визите на одинаковую для каждого показателя крови величину - отсюда и идентичные значения p-values при сравнении групп внутри каждого визита (разница в средних значениях между группами по каждому показателю не изменилась между визитами).
+Заметим, что p-values в таблицах 2 выше получились абсолютно идентичными для обоих визитов по тем показателям, где не было пропущенных данных (гемоглобин и эритроциты). Если для каждого наблюдения в выборке рассчитать изменение каждого показателя крови между визитами, то можно заметить (см. табл.3), что по всем показателям, кроме гемоглобина, изменение было абсолютно одинаковым для всех наблюдений без пропусков, для гемоглобина встречается 2 уникальных значения изменения, и то они различаются только четвертым знаком после запятой (что, вероятнее всего, связано со спецификой хранения R-ом десятичных чисел в памяти компьютера, тогда как в действительности, если ту же разницу посчитать в Экселе, то она будет абсолютно одинаковой для всех наблюдений). Иными словами, для всех наблюдений значение на втором визите было получено сдвигом вправо значения на первом визите на одинаковую для каждого показателя крови величину (это верно и для исходных данных, без замены неположительных значений на пропуски) - отсюда и идентичные значения p-values при сравнении групп по средним значениям гемоглобина и эритроцитов внутри каждого визита (разница в средних значениях между группами по каждому показателю не изменилась между визитами). Если бы мы сравнивали средние значения изменений между группами, то они были бы одинаковыми, с нулевой дисперсией, и мы не смогли бы выполнить t-тест на таких данных.
 
 #### Таблица 3
 #### Изменение показателей крови между визитами
@@ -465,15 +473,16 @@ tbl %>%
 tbl <- df_visits %>% 
   group_by(ID) %>% 
   summarise(`Группа` = unique(`Группа`), 
-            across(where(is.numeric), ~.[`Визит` == "Визит 2"] - .[`Визит` == "Визит 1"])) %>%
+            across(where(is.numeric), ~.[`Визит` == visits$label[2]] - .[`Визит` == visits$label[1]])) %>%
   select(-ID) %>%
-  tbl_summary(by = "Группа") %>%
+  tbl_summary(by = "Группа", missing_text = "Н.Д.") %>%
   modify_header(all_stat_cols() ~ "**{level}**\nN = {n}",
-                label = "**Разница (Визит 2 - Визит 1)**") %>%
+                label = sprintf("**Разница (%s - %s)**", visits$label[2], visits$label[1])) %>%
   modify_footnote(everything() ~ NA) %>%
   bold_labels()
 
 rows_varnames <- which(tbl$table_body$row_type == "label")
+rows_stats <- which(tbl$table_body$row_type != "label")
 
 tbl %>%
   as_flex_table() %>%
@@ -485,5 +494,6 @@ tbl %>%
   fontsize(size = 11, part = "body") %>%
   fontsize(size = 12, part = "header") %>%
   fontsize(size = 11, part = "footer") %>%
+  line_spacing(i = rows_stats, space = 0.4, part = "body") %>%
   fix_border_issues()
 ```
