@@ -10,7 +10,7 @@ R version 4.1.1
 
 Использованные пакеты:
 
-- tydiverse 1.3.2
+- tidyverse 1.3.2
 - emojifont 0.5.5
 - extrafont 0.18
 - ggforce 0.3.3

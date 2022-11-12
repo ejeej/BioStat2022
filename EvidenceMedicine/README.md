@@ -12,7 +12,7 @@ R version 4.1.1
 
 Использованные пакеты:
 
-- tydiverse 1.3.2
+- tidyverse 1.3.2
 - labelled 2.9.0
 - gtsummary 1.5.2
 - ggsurvfit 0.0.0

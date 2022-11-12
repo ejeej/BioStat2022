@@ -14,6 +14,6 @@ R version 4.1.1
 
 Необходимые пакеты:
 
-- tydiverse 1.3.2
+- tidyverse 1.3.2
 
 - pROC 1.18.0
